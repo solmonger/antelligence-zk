@@ -9,7 +9,7 @@ use clap::Parser;
 use fibonacci_lib::SimulationProof;
 use sp1_sdk::{
     blocking::{ProveRequest, Prover, ProverClient},
-    include_elf, Elf, SP1Stdin,
+    include_elf, Elf, ProvingKey, SP1Stdin,
 };
 
 /// The ELF for the antelligence simulation proof program.

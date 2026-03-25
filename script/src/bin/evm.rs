@@ -10,7 +10,7 @@ use fibonacci_lib::SimulationProof;
 use serde::{Deserialize, Serialize};
 use sp1_sdk::{
     blocking::{ProveRequest, Prover, ProverClient},
-    include_elf, Elf, HashableKey, SP1ProofWithPublicValues, SP1Stdin, SP1VerifyingKey,
+    include_elf, Elf, HashableKey, ProvingKey, SP1ProofWithPublicValues, SP1Stdin, SP1VerifyingKey,
 };
 use std::path::PathBuf;
 
