@@ -75,3 +75,60 @@ pub fn verify_simulation_hash(
 
     true
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_params_valid() {
+        assert!(validate_params(150, 10, 300, 38000, 90000));
+    }
+
+    #[test]
+    fn test_validate_params_tumor_too_small() {
+        assert!(!validate_params(10, 10, 300, 38000, 90000));
+    }
+
+    #[test]
+    fn test_validate_params_tumor_too_large() {
+        assert!(!validate_params(600, 10, 300, 38000, 90000));
+    }
+
+    #[test]
+    fn test_validate_params_zero_nanobots() {
+        assert!(!validate_params(150, 0, 300, 38000, 90000));
+    }
+
+    #[test]
+    fn test_validate_params_boundary() {
+        assert!(validate_params(50, 1, 10, 0, 0));
+        assert!(validate_params(500, 100, 10000, 100_000, 1_000_000));
+    }
+
+    #[test]
+    fn test_verify_hash_zero_cells() {
+        assert!(verify_simulation_hash(b"config", 42, 0, 0, 0));
+    }
+
+    #[test]
+    fn test_verify_hash_kills_exceed_total() {
+        assert!(!verify_simulation_hash(b"config", 42, 10000, 100, 50));
+    }
+
+    #[test]
+    fn test_verify_hash_perfect_score() {
+        assert!(verify_simulation_hash(b"config", 42, 10000, 66, 66));
+    }
+
+    #[test]
+    fn test_verify_hash_correct_rate() {
+        // 30/66 * 10000 = 4545 (integer division)
+        assert!(verify_simulation_hash(b"config", 42, 4545, 30, 66));
+    }
+
+    #[test]
+    fn test_verify_hash_wrong_rate() {
+        assert!(!verify_simulation_hash(b"config", 42, 5000, 30, 66));
+    }
+}
