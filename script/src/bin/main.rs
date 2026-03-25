@@ -1,97 +1,97 @@
-//! An end-to-end example of using the SP1 SDK to generate a proof of a program that can be executed
-//! or have a core proof generated.
+//! Antelligence ZK Script — Execute or prove the simulation verification program.
 //!
-//! You can run this script using the following command:
-//! ```shell
-//! RUST_LOG=info cargo run --release -- --execute
-//! ```
-//! or
-//! ```shell
-//! RUST_LOG=info cargo run --release -- --prove
-//! ```
+//! Usage:
+//!   cargo run --release -- --execute    # Execute without proof
+//!   cargo run --release -- --prove      # Generate SP1 core proof
 
 use alloy_sol_types::SolType;
 use clap::Parser;
-use fibonacci_lib::PublicValuesStruct;
+use fibonacci_lib::SimulationProof;
 use sp1_sdk::{
     blocking::{ProveRequest, Prover, ProverClient},
-    include_elf, Elf, ProvingKey, SP1Stdin,
+    include_elf, Elf, SP1Stdin,
 };
 
-/// The ELF (executable and linkable format) file for the Succinct RISC-V zkVM.
-const FIBONACCI_ELF: Elf = include_elf!("fibonacci-program");
+/// The ELF for the antelligence simulation proof program.
+const SIMULATION_ELF: Elf = include_elf!("fibonacci-program");
 
-/// The arguments for the command.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about = "Antelligence ZK proof script")]
 struct Args {
     #[arg(long)]
     execute: bool,
 
     #[arg(long)]
     prove: bool,
-
-    #[arg(long, default_value = "20")]
-    n: u32,
 }
 
 fn main() {
-    // Setup the logger.
     sp1_sdk::utils::setup_logger();
     dotenv::dotenv().ok();
 
-    // Parse the command line arguments.
     let args = Args::parse();
-
     if args.execute == args.prove {
-        eprintln!("Error: You must specify either --execute or --prove");
+        eprintln!("Error: specify either --execute or --prove");
         std::process::exit(1);
     }
 
-    // Setup the prover client.
     let client = ProverClient::from_env();
 
-    // Setup the inputs.
-    let mut stdin = SP1Stdin::new();
-    stdin.write(&args.n);
+    // Setup test simulation inputs
+    let config_bytes: Vec<u8> = b"test-config-tumor-150um-10bots".to_vec();
+    let tumor_radius: u32 = 150;
+    let nanobot_count: u32 = 10;
+    let steps: u32 = 300;
+    let seed: u64 = 42;
+    let oxygen_level_x1000: u32 = 38_000; // 38.0 mmHg
+    let drug_dosage_x1000: u32 = 90_000;  // 90.0 ug
 
-    println!("n: {}", args.n);
+    // Simulation results (would come from BioFVM in production)
+    let kills: u32 = 30;
+    let total_cells: u32 = 66;
+    let kill_rate: u32 = (kills as u64 * 10000 / total_cells as u64) as u32; // 4545
+
+    // Write inputs to SP1 stdin
+    let mut stdin = SP1Stdin::new();
+    stdin.write(&config_bytes);
+    stdin.write(&tumor_radius);
+    stdin.write(&nanobot_count);
+    stdin.write(&steps);
+    stdin.write(&seed);
+    stdin.write(&oxygen_level_x1000);
+    stdin.write(&drug_dosage_x1000);
+    stdin.write(&kills);
+    stdin.write(&total_cells);
+    stdin.write(&kill_rate);
+
+    println!("Antelligence ZK Simulation Proof");
+    println!("  Tumor radius: {}um", tumor_radius);
+    println!("  Nanobots: {}", nanobot_count);
+    println!("  Steps: {}", steps);
+    println!("  Kill rate: {:.1}%", kill_rate as f64 / 100.0);
 
     if args.execute {
-        // Execute the program
-        let (output, report) = client.execute(FIBONACCI_ELF, stdin).run().unwrap();
+        let (output, report) = client.execute(SIMULATION_ELF, stdin).run().unwrap();
         println!("Program executed successfully.");
 
-        // Read the output.
-        let decoded = PublicValuesStruct::abi_decode(output.as_slice()).unwrap();
-        let PublicValuesStruct { n, a, b } = decoded;
-        println!("n: {}", n);
-        println!("a: {}", a);
-        println!("b: {}", b);
+        let decoded = SimulationProof::abi_decode(output.as_slice()).unwrap();
+        println!("Public values:");
+        println!("  Kill rate: {:.1}%", decoded.killRate as f64 / 100.0);
+        println!("  Nanobot count: {}", decoded.nanobotCount);
+        println!("  Tumor radius: {}um", decoded.tumorRadius);
+        println!("  Steps: {}", decoded.steps);
+        println!("  Valid: {}", decoded.valid);
+        println!("Cycles: {}", report.total_instruction_count());
 
-        let (expected_a, expected_b) = fibonacci_lib::fibonacci(n);
-        assert_eq!(a, expected_a);
-        assert_eq!(b, expected_b);
-        println!("Values are correct!");
-
-        // Record the number of cycles executed.
-        println!("Number of cycles: {}", report.total_instruction_count());
+        assert!(decoded.valid, "Simulation validation failed!");
+        assert_eq!(decoded.killRate, kill_rate);
+        println!("All assertions passed!");
     } else {
-        // Setup the program for proving.
-        let pk = client.setup(FIBONACCI_ELF).expect("failed to setup elf");
-
-        // Generate the proof
-        let proof = client
-            .prove(&pk, stdin)
-            .run()
-            .expect("failed to generate proof");
-
+        let pk = client.setup(SIMULATION_ELF).expect("failed to setup elf");
+        let proof = client.prove(&pk, stdin).run().expect("failed to generate proof");
         println!("Successfully generated proof!");
 
-        // Verify the proof.
-        client
-            .verify(&proof, pk.verifying_key(), None)
-            .expect("failed to verify proof");
+        client.verify(&proof, pk.verifying_key(), None).expect("failed to verify proof");
         println!("Successfully verified proof!");
     }
 }
