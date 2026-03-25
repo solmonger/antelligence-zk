@@ -2,104 +2,97 @@
 pragma solidity ^0.8.20;
 
 import {Test, console} from "forge-std/Test.sol";
-import {stdJson} from "forge-std/StdJson.sol";
-import {Fibonacci} from "../src/Fibonacci.sol";
+import {TumorIntel, SimulationProof} from "../src/Fibonacci.sol";
 import {SP1VerifierGateway} from "@sp1-contracts/SP1VerifierGateway.sol";
 
-struct SP1ProofFixtureJson {
-    uint32 a;
-    uint32 b;
-    uint32 n;
-    bytes proof;
-    bytes publicValues;
-    bytes32 vkey;
-}
-
-contract FibonacciGroth16Test is Test {
-    using stdJson for string;
-
+contract TumorIntelTest is Test {
     address verifier;
-    Fibonacci public fibonacci;
-
-    function loadFixture() public view returns (SP1ProofFixtureJson memory) {
-        string memory root = vm.projectRoot();
-        string memory path = string.concat(root, "/src/fixtures/groth16-fixture.json");
-        string memory json = vm.readFile(path);
-        bytes memory jsonBytes = json.parseRaw(".");
-        return abi.decode(jsonBytes, (SP1ProofFixtureJson));
-    }
+    TumorIntel public tumorIntel;
+    bytes32 constant MOCK_VKEY = bytes32(uint256(1));
 
     function setUp() public {
-        SP1ProofFixtureJson memory fixture = loadFixture();
-
         verifier = address(new SP1VerifierGateway(address(1)));
-        fibonacci = new Fibonacci(verifier, fixture.vkey);
+        tumorIntel = new TumorIntel(verifier, MOCK_VKEY);
     }
 
-    function test_ValidFibonacciProof() public {
-        SP1ProofFixtureJson memory fixture = loadFixture();
-
-        vm.mockCall(verifier, abi.encodeWithSelector(SP1VerifierGateway.verifyProof.selector), abi.encode(true));
-
-        (uint32 n, uint32 a, uint32 b) = fibonacci.verifyFibonacciProof(fixture.publicValues, fixture.proof);
-        assert(n == fixture.n);
-        assert(a == fixture.a);
-        assert(b == fixture.b);
+    function test_Constructor() public view {
+        assertEq(tumorIntel.verifier(), verifier);
+        assertEq(tumorIntel.simulationVKey(), MOCK_VKEY);
     }
 
-    function testRevert_InvalidFibonacciProof() public {
+    function test_VerifySimulation() public {
+        SimulationProof memory proof = SimulationProof({
+            configHash: bytes32(uint256(0xdeadbeef)),
+            killRate: 4545,
+            nanobotCount: 10,
+            tumorRadius: 150,
+            steps: 300,
+            seedHash: bytes32(uint256(0xcafe)),
+            valid: true
+        });
+
+        bytes memory publicValues = abi.encode(proof);
+        bytes memory fakeProofBytes = new bytes(32);
+
+        vm.mockCall(
+            verifier,
+            abi.encodeWithSelector(SP1VerifierGateway.verifyProof.selector),
+            abi.encode(true)
+        );
+
+        SimulationProof memory result = tumorIntel.verifySimulation(publicValues, fakeProofBytes);
+
+        assertEq(result.killRate, 4545);
+        assertEq(result.nanobotCount, 10);
+        assertEq(result.tumorRadius, 150);
+        assertEq(result.steps, 300);
+        assertTrue(result.valid);
+        assertTrue(tumorIntel.isVerified(proof.configHash));
+    }
+
+    function test_RevertOnInvalidSimulation() public {
+        SimulationProof memory proof = SimulationProof({
+            configHash: bytes32(uint256(0xbad)),
+            killRate: 0,
+            nanobotCount: 0,
+            tumorRadius: 0,
+            steps: 0,
+            seedHash: bytes32(0),
+            valid: false
+        });
+
+        bytes memory publicValues = abi.encode(proof);
+        bytes memory fakeProofBytes = new bytes(32);
+
+        vm.mockCall(
+            verifier,
+            abi.encodeWithSelector(SP1VerifierGateway.verifyProof.selector),
+            abi.encode(true)
+        );
+
+        vm.expectRevert("Simulation validation failed");
+        tumorIntel.verifySimulation(publicValues, fakeProofBytes);
+    }
+
+    function test_UnverifiedConfig() public view {
+        assertFalse(tumorIntel.isVerified(bytes32(uint256(0x123))));
+    }
+
+    function test_RevertOnBadProof() public {
+        SimulationProof memory proof = SimulationProof({
+            configHash: bytes32(uint256(0xdeadbeef)),
+            killRate: 4545,
+            nanobotCount: 10,
+            tumorRadius: 150,
+            steps: 300,
+            seedHash: bytes32(uint256(0xcafe)),
+            valid: true
+        });
+
+        bytes memory publicValues = abi.encode(proof);
+        bytes memory badProof = new bytes(32);
+
         vm.expectRevert();
-
-        SP1ProofFixtureJson memory fixture = loadFixture();
-
-        // Create a fake proof.
-        bytes memory fakeProof = new bytes(fixture.proof.length);
-
-        fibonacci.verifyFibonacciProof(fixture.publicValues, fakeProof);
-    }
-}
-
-
-contract FibonacciPlonkTest is Test {
-    using stdJson for string;
-
-    address verifier;
-    Fibonacci public fibonacci;
-
-    function loadFixture() public view returns (SP1ProofFixtureJson memory) {
-        string memory root = vm.projectRoot();
-        string memory path = string.concat(root, "/src/fixtures/plonk-fixture.json");
-        string memory json = vm.readFile(path);
-        bytes memory jsonBytes = json.parseRaw(".");
-        return abi.decode(jsonBytes, (SP1ProofFixtureJson));
-    }
-
-    function setUp() public {
-        SP1ProofFixtureJson memory fixture = loadFixture();
-
-        verifier = address(new SP1VerifierGateway(address(1)));
-        fibonacci = new Fibonacci(verifier, fixture.vkey);
-    }
-
-    function test_ValidFibonacciProof() public {
-        SP1ProofFixtureJson memory fixture = loadFixture();
-
-        vm.mockCall(verifier, abi.encodeWithSelector(SP1VerifierGateway.verifyProof.selector), abi.encode(true));
-
-        (uint32 n, uint32 a, uint32 b) = fibonacci.verifyFibonacciProof(fixture.publicValues, fixture.proof);
-        assert(n == fixture.n);
-        assert(a == fixture.a);
-        assert(b == fixture.b);
-    }
-
-    function testRevert_InvalidFibonacciProof() public {
-        vm.expectRevert();
-
-        SP1ProofFixtureJson memory fixture = loadFixture();
-
-        // Create a fake proof.
-        bytes memory fakeProof = new bytes(fixture.proof.length);
-
-        fibonacci.verifyFibonacciProof(fixture.publicValues, fakeProof);
+        tumorIntel.verifySimulation(publicValues, badProof);
     }
 }
